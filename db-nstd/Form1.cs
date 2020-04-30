@@ -48,8 +48,7 @@ namespace db_nstd
         private void btn_add_Click(object sender, EventArgs e)
         {
             bool is_cancel = false;
-            int temp = 0;
-            long temp2 = 0;
+            double temp3 = 0;
             errorProvider1.SetError(cmB_column, "");
             errorProvider2.SetError(cmB_condition, "");
             errorProvider3.SetError(txtB_value, "");
@@ -69,19 +68,33 @@ namespace db_nstd
                 errorProvider3.SetError(txtB_value, "Значение не может быть пустым");
                 is_cancel = true;
             }
-            //double precision
-            if (!is_cancel && ((cmB_column.SelectedItem as db_column).Column_type == "integer" || (cmB_column.SelectedItem as db_column).Column_type == "double precision"))
+            if (!is_cancel && ((cmB_column.SelectedItem as db_column).Column_type == "integer"))
+            {
+                int temp = 0;
                 if (!Int32.TryParse(txtB_value.Text, out temp))
                 {
                     errorProvider3.SetError(txtB_value, "Введите число");
                     is_cancel = true;
                 }
-            if (!is_cancel && (cmB_column.SelectedItem as db_column).Column_type == "bigint")
-                if (!Int64.TryParse(txtB_value.Text, out temp2))
+            }
+            else if ((cmB_column.SelectedItem as db_column).Column_type == "numeric")
+            {
+                double temp = 0;
+                if (!Double.TryParse(txtB_value.Text, out temp))
                 {
                     errorProvider3.SetError(txtB_value, "Введите число");
                     is_cancel = true;
                 }
+            }
+            else if (!is_cancel && (cmB_column.SelectedItem as db_column).Column_type == "bigint")
+            {
+                long temp = 0;
+                if (!Int64.TryParse(txtB_value.Text, out temp))
+                {
+                    errorProvider3.SetError(txtB_value, "Введите число");
+                    is_cancel = true;
+                }
+            }
 
 
             if (is_cancel)
@@ -109,14 +122,39 @@ namespace db_nstd
 
         private void button1_Click(object sender, EventArgs e)
         {
+            if (chB_columns.CheckedItems.Count == 0)
+            {
+                MessageBox.Show("Поля не выбраны");
+            }
             this.UpdateSelectedColumnsList();
-            var res = generation.SELECT(chB_columns) + "\n " + generation.JOIN(selected_columns) + "\n " + generation.WHERE(lv_where);
+            var select = generation.SELECT(chB_columns);
+            var (froms, joins) = generation.JOIN(selected_columns);
+            var wheres = generation.WHERE(lv_where);
+
+
+            string res = select + "\n" + froms;
+            if (!joins.Equals("") && !wheres.Equals(""))
+            {
+                res += " WHERE " + joins + "AND" + "(" + wheres + ")";
+            } else if (!joins.Equals(""))
+            {
+                res += " WHERE " + joins;
+            } else if (!wheres.Equals(""))
+            {
+                res += " WHERE " + wheres;
+            }
+
+
             frm_show_sql show_Sql = new frm_show_sql(res);
             show_Sql.ShowDialog();
         }
 
         private void button2_Click(object sender, EventArgs e)
         {
+            if (chB_columns.CheckedItems.Count == 0)
+            {
+                MessageBox.Show("Поля не выбраны");
+            }
             this.UpdateSelectedColumnsList();
             dataGridView1.DataSource = database_funcs.EXECUTE(lv_where, chB_columns, selected_columns);
             tbC_nstd.SelectedTab = tbP_result;

@@ -190,8 +190,9 @@ namespace db_nstd
                 using (var sCommand = new NpgsqlCommand())
                 {
                     sCommand.Connection = sConn;
-                    sCommand.CommandText = generation.SELECT(chB_select)
-                        + " " + generation.JOIN(selected_columns);
+                    var select = generation.SELECT(chB_select);
+                    var (froms, joins) = generation.JOIN(selected_columns);
+                    string res = select + "\n" + froms + "\n";
 
                     List<string> conditions = new List<string>();
                     foreach (ListViewItem item in lv_where.Items)
@@ -201,8 +202,7 @@ namespace db_nstd
                         var value = item.SubItems[2].Text as string;
                         var paramName = "@var" + item.ImageKey;
                         object typedValue = value;
-                        if (((db_column)item.Tag).Column_type == "integer" 
-                            || ((db_column)item.Tag).Column_type == "double precision"
+                        if (((db_column)item.Tag).Column_type == "integer"
                             || ((db_column)item.Tag).Column_type == "digint")
                         {
                             int parseResult;
@@ -211,7 +211,15 @@ namespace db_nstd
                                 typedValue = parseResult;
                             }
                         }
-                        if (!(((db_column)item.Tag).Column_type == "text" || ((db_column)item.Tag).Column_type == "character varying"))
+                        else if (((db_column)item.Tag).Column_type == "numeric")
+                        {
+                            double parseResult;
+                            if (double.TryParse(value, out parseResult))
+                            {
+                                typedValue = parseResult;
+                            }
+                        }
+                        else if (!(((db_column)item.Tag).Column_type == "text" || ((db_column)item.Tag).Column_type == "character varying"))
                         {
                             MessageBox.Show("Тип не поддерживается");
                             continue;
@@ -219,19 +227,25 @@ namespace db_nstd
                         conditions.Add($"{columnname} {condition} {paramName}");
                         sCommand.Parameters.AddWithValue(paramName, typedValue);
                     }
-                    if (conditions.Any())
-                        sCommand.CommandText += " WHERE " + string.Join(" AND ", conditions);
+                    var wheres = string.Join(" AND ", conditions);
+                    if (!joins.Equals("") && !wheres.Equals(""))
+                    {
+                        res += " WHERE " + joins + "AND" + "(" + wheres + ")";
+                    }
+                    else if (!joins.Equals(""))
+                    {
+                        res += " WHERE " + joins;
+                    }
+                    else if (!wheres.Equals(""))
+                    {
+                        res += " WHERE " + wheres;
+                    }
+                    sCommand.CommandText += res;
                     var result = new DataTable();
                     result.Load(sCommand.ExecuteReader());
                     return result;
                 }
             }
-
-
-
-
-
-            
         }
     }
 }

@@ -23,7 +23,7 @@ namespace db_nstd
             this.tableto = tableto;
             this.columnfrom = columnfrom;
             this.columnto = columnto;
-            this.path = path;
+            this.path = " " + tablefrom + "." + columnfrom + " = " + tableto + "." + columnto + " ";
         }
     }
 
@@ -58,7 +58,7 @@ namespace db_nstd
             return "";
         }
 
-        public static List<string> BNF (string tablefrom, string tableto, TabGraph tabGraph)
+        public static ISet<string> BNF(string tablefrom, string tableto, TabGraph tabGraph)
         {
             Queue<string> q = new Queue<string>();
             Dictionary<string, bool> used = new Dictionary<string, bool>() { };
@@ -86,7 +86,7 @@ namespace db_nstd
                 }
             }
 
-            List<string> path = new List<string>();
+            ISet<string> path = new HashSet<string>();
             string cur = tableto;
             path.Add(cur);
 
@@ -96,6 +96,7 @@ namespace db_nstd
                 path.Add(cur);
             }
 
+            path.Add(tablefrom);
             path.Reverse();
             return path;
         }
@@ -105,8 +106,6 @@ namespace db_nstd
     {
         public static string SELECT (CheckedListBox chB_select)
         {
-            if (chB_select.CheckedItems.Count == 0)
-                return "";
             string result = "SELECT ";
             List<string> selected_columns = new List<string>();
             foreach (db_column item in chB_select.CheckedItems)
@@ -114,14 +113,9 @@ namespace db_nstd
             return result + string.Join(", ", selected_columns);
         }
 
-        public static string CreateFromString (List<string> path, TabGraph tabGraph)
+        public static string FROM (ISet<string> tables)
         {
-           
-
-            string result = "FROM " + path[0];
-            for (int i = 1; i < path.Count; i++)
-                result += " JOIN " + path[i] + TabGraph.GetPath(tabGraph, path[i-1], path[i]);
-
+            string result = " FROM " + string.Join(", ", tables);
             return result;
         }
 
@@ -132,6 +126,28 @@ namespace db_nstd
             return false;
         }
 
+        private static ISet<string> PathToJoins(TabGraph tabGraph, ISet<string> path)
+        {
+            ISet<string> res = new HashSet<string>();
+
+            using (var iter = path.GetEnumerator())
+            {
+                string prev = "";
+                if (iter.MoveNext())
+                {
+                    prev = iter.Current;
+                }
+
+                while (iter.MoveNext())
+                {
+                    res.Add(TabGraph.GetPath(tabGraph, prev, iter.Current));
+                    prev = iter.Current;
+                }
+            }
+
+            return res;
+        }
+
         public static List<string> AddMissed (List<string> tables, List<string> max_path)
         {
             foreach (var tb in tables)
@@ -140,40 +156,46 @@ namespace db_nstd
             return max_path;
         }
 
-        public static string JOIN (List<db_column> selected_columns)
+        public static (string, string) JOIN(List<db_column> selected_columns)
         {
-            if (selected_columns.Count == 0)
-                return "";
             // список всех таблиц, которые нужно сджоинить
-            List<string> tables = new List<string>();
+            ISet<string> tables = new HashSet<string>();
             foreach (db_column item in selected_columns)
                 tables.Add(item.Table_name);
-            tables = tables.Distinct().ToList();
 
             // граф с ключами
             TabGraph tabGraph = new TabGraph(database_funcs.GetFKeys());
 
-            List<List<string>> paths = new List<List<string>>();
-
-            int max_path_length = 0;
-            List<string> max_path = new List<string>();
-
+            ISet<string> total_path = new HashSet<string>();
+            ISet<string> extended_tables = new HashSet<string>();
+            foreach (var x in tables)
+            {
+                extended_tables.Add(x);
+            }
             foreach (string x in tables)
             {
                 foreach (string y in tables)
                 {
-                    List<string> path = TabGraph.BNF(x, y, tabGraph);
-                    if (path.Count > max_path_length)
+                    var path = TabGraph.BNF(x, y, tabGraph);
+                    var joins = PathToJoins(tabGraph, path);
+                    foreach (var z in joins)
                     {
-                        max_path = path;
-                        max_path_length = path.Count;
+                        total_path.Add(z);
                     }
-                    paths.Add(path);
+                    foreach (var z in path)
+                    {
+                        extended_tables.Add(z);
+                    }
                 }
             }
-            max_path = AddMissed(tables, max_path);
 
-            return CreateFromString(max_path, tabGraph);
+            if (total_path.Count > 0)
+            {
+                return (FROM(extended_tables), "(" + total_path.Aggregate((x, y) => (x + " AND " + y)) + ")");
+            } else
+            {
+                return (FROM(extended_tables) + "\n", "");
+            }
         }
 
         // это просто генерируется код, он не для выполнения, а чтобы показать
@@ -189,7 +211,7 @@ namespace db_nstd
                 var value = item.SubItems[2].Text as string;
                 conditions.Add(" " + columnname + " " + condition + " " + value + " ");
             }
-            return "WHERE " + string.Join(" AND ", conditions);
+            return string.Join(" AND ", conditions);
         }
     }
 }
